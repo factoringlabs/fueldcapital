@@ -1,0 +1,155 @@
+name: Deploy
+
+# Builds and ships the application (not infra — see terraform-apply.yml).
+# Auto-deploys to dev on every push to main; staging/prod are manual
+# promotions via workflow_dispatch, same "deliberate human action" pattern
+# as terraform-apply.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'apps/web/**'
+      - 'apps/lambdas/**'
+      - 'packages/shared/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  PROJECT_NAME: fueledcapital
+  ENVIRONMENT: ${{ inputs.environment || 'dev' }}
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      - name: Resolve network config for the migration task
+        id: network
+        run: |
+          SUBNET_IDS=$(aws ec2 describe-subnets \
+            --filters "Name=tag:Name,Values=${PROJECT_NAME}-${ENVIRONMENT}-private-*" \
+            --query 'Subnets[].SubnetId' --output text | tr '\t' ',')
+          SG_ID=$(aws ec2 describe-security-groups \
+            --filters "Name=tag:Name,Values=${PROJECT_NAME}-${ENVIRONMENT}-ecs-sg" \
+            --query 'SecurityGroups[0].GroupId' --output text)
+          echo "subnet_ids=$SUBNET_IDS" >> "$GITHUB_OUTPUT"
+          echo "sg_id=$SG_ID" >> "$GITHUB_OUTPUT"
+
+      # --- API ---
+
+      - name: Build & push API image
+        run: |
+          IMAGE="${{ steps.ecr.outputs.registry }}/${PROJECT_NAME}-${ENVIRONMENT}-api:${{ github.sha }}"
+          docker build -f apps/api/Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "API_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Register new API task definition revision
+        id: api-taskdef
+        run: |
+          FAMILY="${PROJECT_NAME}-${ENVIRONMENT}-api"
+          CURRENT=$(aws ecs describe-task-definition --task-definition "$FAMILY" --query 'taskDefinition')
+          NEW=$(echo "$CURRENT" | jq --arg IMAGE "$API_IMAGE" \
+            '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+          echo "$NEW" > api-taskdef.json
+          ARN=$(aws ecs register-task-definition --cli-input-json file://api-taskdef.json --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Run database migration (one-off task, not on container boot)
+        run: |
+          CLUSTER="${PROJECT_NAME}-${ENVIRONMENT}"
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$CLUSTER" \
+            --task-definition "${{ steps.api-taskdef.outputs.arn }}" \
+            --launch-type FARGATE \
+            --overrides '{"containerOverrides":[{"name":"api","command":["node_modules/.bin/prisma","migrate","deploy","--schema","apps/api/prisma/schema.prisma"]}]}' \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ steps.network.outputs.subnet_ids }}],securityGroups=[${{ steps.network.outputs.sg_id }}],assignPublicIp=DISABLED}" \
+            --query 'tasks[0].taskArn' --output text)
+          aws ecs wait tasks-stopped --cluster "$CLUSTER" --tasks "$TASK_ARN"
+          EXIT_CODE=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Migration task failed (exit code $EXIT_CODE) — aborting before touching the live service."
+            exit 1
+          fi
+
+      - name: Deploy API service
+        run: |
+          aws ecs update-service \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}" \
+            --service "${PROJECT_NAME}-${ENVIRONMENT}-api" \
+            --task-definition "${{ steps.api-taskdef.outputs.arn }}" \
+            --force-new-deployment
+
+      # --- Web ---
+
+      - name: Build & push web image
+        run: |
+          IMAGE="${{ steps.ecr.outputs.registry }}/${PROJECT_NAME}-${ENVIRONMENT}-web:${{ github.sha }}"
+          docker build -f apps/web/Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "WEB_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Register new web task definition revision and deploy
+        run: |
+          FAMILY="${PROJECT_NAME}-${ENVIRONMENT}-web"
+          CURRENT=$(aws ecs describe-task-definition --task-definition "$FAMILY" --query 'taskDefinition')
+          NEW=$(echo "$CURRENT" | jq --arg IMAGE "$WEB_IMAGE" \
+            '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+          echo "$NEW" > web-taskdef.json
+          ARN=$(aws ecs register-task-definition --cli-input-json file://web-taskdef.json --query 'taskDefinition.taskDefinitionArn' --output text)
+          aws ecs update-service \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}" \
+            --service "${PROJECT_NAME}-${ENVIRONMENT}-web" \
+            --task-definition "$ARN" \
+            --force-new-deployment
+
+      - name: Wait for both services to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster "${PROJECT_NAME}-${ENVIRONMENT}" \
+            --services "${PROJECT_NAME}-${ENVIRONMENT}-api" "${PROJECT_NAME}-${ENVIRONMENT}-web"
+
+      # --- Lambdas ---
+
+      - run: npm ci
+      - run: npm run build --workspace @fueled-capital/shared
+      - run: npm run build --workspace apps/lambdas
+
+      - name: Package and deploy Lambda handlers
+        run: |
+          for fn in ocr-extraction-trigger monthly-fee-run reserve-release-check notification-sender; do
+            (cd "apps/lambdas/dist/$fn" && zip -r "../../$fn.zip" .)
+            aws lambda update-function-code \
+              --function-name "${PROJECT_NAME}-${ENVIRONMENT}-$fn" \
+              --zip-file "fileb://apps/lambdas/$fn.zip"
+          done

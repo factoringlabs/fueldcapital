@@ -1,0 +1,475 @@
+// Fueled Capital — Phase 1 schema.
+// Exposure convention: the Machinery Company credit sub-limit tracks the FULL
+// invoice totalAmount (not the advance amount). There is intentionally no
+// Broker-level facility limit in this build — see design plan.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  BROKER
+  MACHINERY_COMPANY
+}
+
+enum OnboardingEntityType {
+  BROKER
+  MACHINERY_COMPANY
+}
+
+enum OnboardingStatus {
+  INVITED
+  DOCS_SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  UPLOADED
+  EXTRACTING
+  PENDING_BROKER_REVIEW
+  PENDING_MC_APPROVAL
+  MC_DISPUTED
+  PENDING_UNDERWRITING
+  INFO_REQUESTED
+  REJECTED
+  APPROVED_FOR_FUNDING
+  FUNDED
+  SETTLED
+  CHARGED_BACK
+  WRITTEN_OFF
+  CANCELLED
+}
+
+enum ReserveHoldReasonCode {
+  DISPUTE
+  CREDIT_MEMO
+  OFFSET
+  PRICING_CORRECTION
+  DELIVERY_ISSUE
+  OTHER
+}
+
+enum ChargebackReasonCode {
+  FRAUD
+  DUPLICATE
+  INVALID_DATA
+  PRICING_ERROR
+  DELIVERY_DISPUTE
+  CREDIT_MEMO
+  OFFSET
+  OTHER
+}
+
+enum ChargebackStatus {
+  PENDING
+  COMPLETED
+  WRITTEN_OFF
+}
+
+enum DisputeStatus {
+  OPEN
+  RESOLVED
+  REJECTED
+}
+
+enum PaymentStatus {
+  UNMATCHED
+  PARTIALLY_MATCHED
+  FULLY_MATCHED
+  OVERPAID
+  UNDERPAID
+  DISPUTED
+}
+
+enum LedgerEntryType {
+  FUNDING_DISBURSEMENT
+  RESERVE_HOLD
+  FEE_ACCRUAL
+  FEE_INVOICE
+  PAYMENT_RECEIPT
+  RESERVE_RELEASE
+  ADJUSTMENT
+  CHARGEBACK
+  REPURCHASE
+  WRITE_OFF
+  MANUAL_CORRECTION
+}
+
+enum CreditLimitChangeReason {
+  INVOICE_FUNDED
+  INVOICE_SETTLED
+  CHARGEBACK
+  MANUAL_ADJUSTMENT
+}
+
+enum InvoiceDocumentType {
+  INVOICE
+  POD
+  DELIVERY_TICKET
+  OTHER
+}
+
+enum ExtractionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model AppUser {
+  id                 String            @id @default(uuid())
+  cognitoSub         String            @unique
+  email              String            @unique
+  role               UserRole
+  brokerId           String?
+  broker             Broker?           @relation(fields: [brokerId], references: [id])
+  machineryCompanyId String?
+  machineryCompany   MachineryCompany? @relation(fields: [machineryCompanyId], references: [id])
+  status             String            @default("ACTIVE")
+  createdAt          DateTime          @default(now())
+}
+
+model Broker {
+  id               String               @id @default(uuid())
+  legalName        String
+  dba              String?
+  ein              String
+  address          String?
+  bankAccountRef   String?
+  onboardingStatus OnboardingStatus     @default(INVITED)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  users            AppUser[]
+  invoices         Invoice[]
+  feeAccruals      InvoiceFeeAccrual[]
+  feeInvoices      BrokerFeeInvoice[]
+}
+
+model MachineryCompany {
+  id               String                       @id @default(uuid())
+  legalName        String
+  ein              String
+  address          String?
+  onboardingStatus OnboardingStatus             @default(INVITED)
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
+  users            AppUser[]
+  invoices         Invoice[]
+  creditLimit      MachineryCompanyCreditLimit?
+  payments         Payment[]
+}
+
+model KybKycDocument {
+  id           String    @id @default(uuid())
+  entityType   OnboardingEntityType
+  entityId     String
+  docType      String
+  s3Key        String
+  uploadedBy   String
+  uploadedAt   DateTime  @default(now())
+  reviewStatus String    @default("PENDING")
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  notes        String?
+
+  @@index([entityType, entityId])
+}
+
+model MachineryCompanyCreditLimit {
+  id                 String                  @id @default(uuid())
+  machineryCompanyId String                  @unique
+  machineryCompany   MachineryCompany        @relation(fields: [machineryCompanyId], references: [id])
+  totalLimit         Decimal                 @db.Decimal(14, 2)
+  currentUsed        Decimal                 @default(0) @db.Decimal(14, 2)
+  currency           String                  @default("USD")
+  updatedAt          DateTime                @updatedAt
+  changeLogs         CreditLimitChangeLog[]
+}
+
+model CreditLimitChangeLog {
+  id                 String                      @id @default(uuid())
+  machineryCompanyId String
+  creditLimit        MachineryCompanyCreditLimit @relation(fields: [machineryCompanyId], references: [machineryCompanyId])
+  deltaAmount        Decimal                     @db.Decimal(14, 2)
+  reason             CreditLimitChangeReason
+  relatedInvoiceId   String?
+  actorUserId        String?
+  previousUsed       Decimal                     @db.Decimal(14, 2)
+  newUsed            Decimal                     @db.Decimal(14, 2)
+  createdAt          DateTime                    @default(now())
+  idempotencyKey     String                      @unique
+}
+
+model Invoice {
+  id                    String                     @id @default(uuid())
+  invoiceNumber         String
+  brokerId              String
+  broker                Broker                     @relation(fields: [brokerId], references: [id])
+  machineryCompanyId    String
+  machineryCompany      MachineryCompany           @relation(fields: [machineryCompanyId], references: [id])
+  invoiceDate           DateTime
+  dueDate               DateTime
+  billedAmount          Decimal                    @db.Decimal(14, 2)
+  taxAmount             Decimal                    @default(0) @db.Decimal(14, 2)
+  totalAmount           Decimal                    @db.Decimal(14, 2)
+  gallons               Decimal                    @db.Decimal(14, 3)
+  deliveryDetails        Json?
+  paymentReference      String?
+  status                InvoiceStatus              @default(DRAFT)
+  disputeReasonCode     String?
+  reserveHold           Boolean                    @default(false)
+  reserveHoldReasonCode ReserveHoldReasonCode?
+  advancePctApplied     Decimal?                   @db.Decimal(5, 2)
+  advanceAmount         Decimal?                   @db.Decimal(14, 2)
+  reserveAmount         Decimal?                   @db.Decimal(14, 2)
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  submittedAt           DateTime?
+  mcApprovedAt          DateTime?
+  fundedAt              DateTime?
+  settledAt             DateTime?
+  cancelledAt           DateTime?
+
+  documents         InvoiceDocument[]
+  statusHistory     InvoiceStatusHistory[]
+  extractionResults InvoiceExtractionResult[]
+  disputes          Dispute[]
+  chargebacks       Chargeback[]
+  reserveHoldEvents ReserveHoldEvent[]
+  feeAccruals       InvoiceFeeAccrual[]
+  paymentMatches    PaymentInvoiceMatch[]
+  ledgerEntries     LedgerEntry[]
+
+  @@unique([brokerId, invoiceNumber])
+  @@index([machineryCompanyId])
+  @@index([status])
+}
+
+model InvoiceDocument {
+  id         String              @id @default(uuid())
+  invoiceId  String
+  invoice    Invoice             @relation(fields: [invoiceId], references: [id])
+  docType    InvoiceDocumentType
+  s3Key      String
+  uploadedBy String
+  uploadedAt DateTime            @default(now())
+}
+
+model InvoiceStatusHistory {
+  id          String        @id @default(uuid())
+  invoiceId   String
+  invoice     Invoice       @relation(fields: [invoiceId], references: [id])
+  fromStatus  InvoiceStatus
+  toStatus    InvoiceStatus
+  reasonCode  String?
+  actorUserId String?
+  createdAt   DateTime      @default(now())
+  metadata    Json?
+}
+
+model InvoiceExtractionResult {
+  id               String            @id @default(uuid())
+  invoiceId        String
+  invoice          Invoice           @relation(fields: [invoiceId], references: [id])
+  provider         String
+  rawResponse      Json?
+  extractedFields  Json?
+  confidenceScores Json?
+  status           ExtractionStatus  @default(PENDING)
+  createdAt        DateTime          @default(now())
+}
+
+model Dispute {
+  id              String        @id @default(uuid())
+  invoiceId       String
+  invoice         Invoice       @relation(fields: [invoiceId], references: [id])
+  raisedBy        String
+  reasonCode      String
+  description     String?
+  status          DisputeStatus @default(OPEN)
+  resolutionNotes String?
+  resolvedBy      String?
+  resolvedAt      DateTime?
+  createdAt       DateTime      @default(now())
+}
+
+model Chargeback {
+  id            String               @id @default(uuid())
+  invoiceId     String
+  invoice       Invoice              @relation(fields: [invoiceId], references: [id])
+  reasonCode    ChargebackReasonCode
+  amount        Decimal              @db.Decimal(14, 2)
+  initiatedBy   String
+  initiatedAt   DateTime             @default(now())
+  status        ChargebackStatus     @default(PENDING)
+  notes         String?
+  ledgerEntryId String?
+}
+
+model ReserveHoldEvent {
+  id         String                @id @default(uuid())
+  invoiceId  String
+  invoice    Invoice               @relation(fields: [invoiceId], references: [id])
+  reasonCode ReserveHoldReasonCode
+  notes      String?
+  placedBy   String
+  placedAt   DateTime              @default(now())
+  releasedBy String?
+  releasedAt DateTime?
+  active     Boolean               @default(true)
+}
+
+model FeeTier {
+  id            String    @id @default(uuid())
+  gallonsFrom   Decimal   @db.Decimal(14, 3)
+  gallonsTo     Decimal?  @db.Decimal(14, 3)
+  feePct        Decimal   @db.Decimal(5, 3)
+  notes         String?
+  effectiveFrom DateTime  @default(now())
+  effectiveTo   DateTime?
+  isActive      Boolean   @default(true)
+  createdBy     String
+  createdAt     DateTime  @default(now())
+}
+
+model ProgramFeeConfig {
+  id                String    @id @default(uuid())
+  minimumMonthlyFee Decimal   @db.Decimal(14, 2)
+  effectiveFrom     DateTime  @default(now())
+  effectiveTo       DateTime?
+  createdBy         String
+  createdAt         DateTime  @default(now())
+}
+
+model InvoiceFeeAccrual {
+  id            String   @id @default(uuid())
+  invoiceId     String
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id])
+  brokerId      String
+  broker        Broker   @relation(fields: [brokerId], references: [id])
+  periodMonth   DateTime
+  tierIdApplied String?
+  feePctApplied Decimal  @db.Decimal(5, 3)
+  baseAmount    Decimal  @db.Decimal(14, 2)
+  feeAmount     Decimal  @db.Decimal(14, 2)
+  createdAt     DateTime @default(now())
+
+  @@unique([invoiceId, periodMonth])
+}
+
+model BrokerFeeInvoice {
+  id                         String   @id @default(uuid())
+  brokerId                   String
+  broker                     Broker   @relation(fields: [brokerId], references: [id])
+  periodMonth                DateTime
+  generatedAt                DateTime @default(now())
+  gallonsVolume              Decimal  @db.Decimal(14, 3)
+  invoiceDollarVolume        Decimal  @db.Decimal(14, 2)
+  applicableTierId           String?
+  calculatedFee              Decimal  @db.Decimal(14, 2)
+  minimumFeeShortfallApplied Boolean  @default(false)
+  totalFeeAmount             Decimal  @db.Decimal(14, 2)
+  status                     String   @default("DRAFT")
+  pdfS3Key                   String?
+
+  @@unique([brokerId, periodMonth])
+}
+
+model Payment {
+  id                 String           @id @default(uuid())
+  machineryCompanyId String
+  machineryCompany   MachineryCompany @relation(fields: [machineryCompanyId], references: [id])
+  receivedAt         DateTime
+  amount             Decimal          @db.Decimal(14, 2)
+  currency           String           @default("USD")
+  method             String?
+  externalReference  String?
+  bankReference      String?
+  status             PaymentStatus    @default(UNMATCHED)
+  createdAt          DateTime         @default(now())
+  reconciledBy       String?
+  reconciledAt       DateTime?
+
+  matches PaymentInvoiceMatch[]
+}
+
+model PaymentInvoiceMatch {
+  id            String   @id @default(uuid())
+  paymentId     String
+  payment       Payment  @relation(fields: [paymentId], references: [id])
+  invoiceId     String
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id])
+  matchedAmount Decimal  @db.Decimal(14, 2)
+  matchedBy     String
+  matchedAt     DateTime @default(now())
+  notes         String?
+}
+
+model LedgerEntry {
+  id                        String          @id @default(uuid())
+  entryType                 LedgerEntryType
+  amount                    Decimal         @db.Decimal(14, 2)
+  currency                  String          @default("USD")
+  relatedInvoiceId          String?
+  relatedInvoice            Invoice?        @relation(fields: [relatedInvoiceId], references: [id])
+  relatedBrokerId           String?
+  relatedMachineryCompanyId String?
+  actorUserId               String?
+  idempotencyKey            String          @unique
+  createdAt                 DateTime        @default(now())
+  metadata                  Json?
+
+  @@index([relatedInvoiceId])
+  @@index([entryType])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  entityType  String
+  entityId    String
+  action      String
+  actorUserId String?
+  before      Json?
+  after       Json?
+  reasonCode  String?
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
+
+model IdempotencyRecord {
+  id               String   @id @default(uuid())
+  key              String   @unique
+  endpoint         String
+  requestHash      String
+  responseSnapshot Json?
+  createdAt        DateTime @default(now())
+}
+
+model Notification {
+  id                String              @id @default(uuid())
+  recipientUserId   String
+  type              String
+  channel           String              @default("EMAIL")
+  subject           String
+  body              String
+  status            NotificationStatus  @default(PENDING)
+  relatedEntityType String?
+  relatedEntityId   String?
+  createdAt         DateTime            @default(now())
+  sentAt            DateTime?
+}

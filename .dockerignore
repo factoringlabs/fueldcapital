@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/.next
+**/coverage
+**/local-storage
+.git
+.github
+terraform
+*.md
+.env
+.env.*
+!.env.example

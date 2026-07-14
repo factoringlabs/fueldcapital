@@ -1,0 +1,45 @@
+name: Terraform Apply
+
+# Manual only — deliberately never runs on push. Applying infra changes moves
+# real, billed AWS resources; it stays a human decision, triggered from the
+# Actions tab, not an automatic side effect of merging.
+#
+# Gate this further in GitHub repo Settings -> Environments: create
+# environments named "dev", "staging", "prod" and add required reviewers to
+# "staging" and "prod" so someone has to approve the run before it executes.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to apply'
+        required: true
+        type: choice
+        options: [dev, staging, prod]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.8'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: terraform init
+        working-directory: terraform/envs/${{ inputs.environment }}
+        run: terraform init -input=false
+
+      - name: terraform apply
+        working-directory: terraform/envs/${{ inputs.environment }}
+        run: terraform apply -input=false -auto-approve

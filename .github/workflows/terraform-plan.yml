@@ -1,0 +1,67 @@
+name: Terraform Plan
+
+# Read-only. Runs `terraform plan` for every environment on any PR that
+# touches terraform/**, so reviewers see the infra diff before merge.
+# Never applies anything — see terraform-apply.yml (manual-only) for that.
+on:
+  pull_request:
+    paths:
+      - 'terraform/**'
+
+permissions:
+  id-token: write # required for OIDC — no long-lived AWS keys
+  contents: read
+  pull-requests: write # to comment the plan on the PR
+
+jobs:
+  plan:
+    strategy:
+      matrix:
+        environment: [dev, staging, prod]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.8'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: terraform init
+        working-directory: terraform/envs/${{ matrix.environment }}
+        run: terraform init -input=false
+
+      - name: terraform fmt check
+        working-directory: terraform/envs/${{ matrix.environment }}
+        run: terraform fmt -check -recursive ../../
+
+      - name: terraform validate
+        working-directory: terraform/envs/${{ matrix.environment }}
+        run: terraform validate
+
+      - name: terraform plan
+        working-directory: terraform/envs/${{ matrix.environment }}
+        run: terraform plan -input=false -no-color -out=tfplan
+        # Real ACM cert / domain vars are expected to come from each
+        # environment's terraform.tfvars, provisioned once out-of-band per
+        # terraform/README.md — not from CI secrets, so this step legitimately
+        # fails until that one-time setup is done for a given environment.
+        continue-on-error: true
+        id: plan
+
+      - name: Comment plan on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const outcome = '${{ steps.plan.outcome }}';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `**Terraform plan — ${{ matrix.environment }}**: ${outcome}\n\nSee the Actions run for full output.`,
+            });

@@ -1,0 +1,30 @@
+module "app" {
+  source = "../../modules/app"
+
+  project_name       = var.project_name
+  environment        = var.environment
+  aws_region         = var.aws_region
+  availability_zones = var.availability_zones
+
+  domain_name                    = var.domain_name
+  acm_certificate_arn_regional   = var.acm_certificate_arn_regional
+  acm_certificate_arn_cloudfront = var.acm_certificate_arn_cloudfront
+
+  github_repository   = var.github_repository
+  api_container_image = var.api_container_image
+  web_container_image = var.web_container_image
+
+  # staging: closer to prod topology (2 NATs, deletion protection) but
+  # single-AZ DB and 1 task per service — mirrors prod behavior without
+  # paying for prod-level redundancy.
+  single_nat_gateway     = false
+  db_instance_class      = "db.t4g.small"
+  db_multi_az             = false
+  db_deletion_protection = true
+  api_desired_count      = 1
+  web_desired_count      = 1
+  api_cpu                = 512
+  api_memory             = 1024
+  web_cpu                 = 512
+  web_memory               = 1024
+}

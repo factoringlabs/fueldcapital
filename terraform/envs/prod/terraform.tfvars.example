@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars (gitignored) and fill in the values that only
+# exist after the manual prerequisites in terraform/README.md are done.
+#
+# Prod additionally needs Admin/product-owner sign-off before first apply —
+# see the "Known open items" section of the root README (settlement
+# waterfall, late fees) and confirm those are resolved before going live.
+
+domain_name                    = "app.fueledcapital.com"
+acm_certificate_arn_regional   = "arn:aws:acm:us-east-1:567947663867:certificate/REPLACE_ME"
+acm_certificate_arn_cloudfront = "arn:aws:acm:us-east-1:567947663867:certificate/REPLACE_ME"

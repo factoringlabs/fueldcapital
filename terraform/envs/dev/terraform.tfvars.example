@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars (gitignored) and fill in the values that only
+# exist after the manual prerequisites in terraform/README.md are done.
+
+domain_name                   = "dev.fueledcapital.com"
+acm_certificate_arn_regional  = "arn:aws:acm:us-east-1:567947663867:certificate/REPLACE_ME"
+acm_certificate_arn_cloudfront = "arn:aws:acm:us-east-1:567947663867:certificate/REPLACE_ME"
+
+# Leave api_container_image / web_container_image unset for the very first
+# apply — they default to a placeholder image so Terraform doesn't need a
+# pre-built image to exist yet. The deploy workflow's first run replaces them.
