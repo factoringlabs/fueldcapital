@@ -4,6 +4,9 @@
 // Broker-level facility limit in this build — see design plan.
 generator client {
   provider = "prisma-client-js"
+  // "native" covers local dev on Windows/Mac/Linux; the musl target covers
+  // the Alpine-based Docker image ECS actually runs (see apps/api/Dockerfile).
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {

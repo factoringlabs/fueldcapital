@@ -128,10 +128,20 @@ data "aws_iam_policy_document" "github_deploy_assume" {
       variable = "token.actions.githubusercontent.com:aud"
       values   = ["sts.amazonaws.com"]
     }
+    # A GitHub Actions job's OIDC "sub" claim format depends on how it's
+    # triggered — repo:OWNER/REPO:ref:refs/heads/BRANCH for a plain push,
+    # but repo:OWNER/REPO:environment:NAME once the job is tied to a GitHub
+    # Environment (which deploy.yml and terraform-apply.yml both are, so
+    # staging/prod can require reviewer approval), and yet another form for
+    # pull_request triggers (terraform-plan.yml). Rather than enumerate every
+    # format, scope by repo only here — WHEN a workflow is allowed to run
+    # with these permissions is already enforced by GitHub itself (branch
+    # protections, required reviewers on the Environment), before it ever
+    # requests a token AWS would see.
     condition {
-      test     = "StringEquals"
+      test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repository}:ref:${var.github_deploy_ref}"]
+      values   = ["repo:${var.github_repository}:*"]
     }
   }
 }
@@ -169,8 +179,10 @@ data "aws_iam_policy_document" "github_deploy_permissions" {
       "ecs:DescribeTaskDefinition",
       "ecs:RegisterTaskDefinition",
       "ecs:UpdateService",
+      "ecs:RunTask",
+      "ecs:DescribeTasks",
     ]
-    resources = ["*"] # RegisterTaskDefinition doesn't support resource-level scoping; UpdateService is scoped below.
+    resources = ["*"] # Most of these ECS actions don't support resource-level scoping.
   }
   statement {
     sid       = "EcsUpdateServiceScoped"
@@ -186,6 +198,15 @@ data "aws_iam_policy_document" "github_deploy_permissions" {
     sid       = "PassEcsRoles"
     actions   = ["iam:PassRole"]
     resources = [aws_iam_role.ecs_task_execution.arn, aws_iam_role.ecs_task.arn]
+  }
+  statement {
+    # Read-only lookups the deploy workflow uses to find the right private
+    # subnets/security group for the one-off migration task (see deploy.yml's
+    # "Resolve network config" step) — EC2 describe calls don't support
+    # resource-level scoping either.
+    sid       = "DescribeNetworkForMigrationTask"
+    actions   = ["ec2:DescribeSubnets", "ec2:DescribeSecurityGroups"]
+    resources = ["*"]
   }
 }
 

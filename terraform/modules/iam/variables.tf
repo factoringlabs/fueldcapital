@@ -40,12 +40,6 @@ variable "github_repository" {
   description = "org/repo, e.g. \"factoringlabs/fueldcapital\"."
 }
 
-variable "github_deploy_ref" {
-  type        = string
-  default     = "refs/heads/main"
-  description = "Branch/ref allowed to assume the deploy role (app image build+deploy)."
-}
-
 variable "tags" {
   type    = map(string)
   default = {}

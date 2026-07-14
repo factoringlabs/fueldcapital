@@ -3,6 +3,10 @@
 
 FROM node:20-alpine AS base
 WORKDIR /app
+# Prisma's engine binaries need OpenSSL to be present at both `generate` time
+# (to pick the right musl/OpenSSL target) and at runtime (to actually run) —
+# Alpine doesn't include it by default, unlike Debian-based images.
+RUN apk add --no-cache openssl
 
 FROM base AS deps
 COPY package.json package-lock.json ./
