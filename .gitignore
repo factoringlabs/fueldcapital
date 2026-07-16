@@ -17,3 +17,4 @@ coverage/
 terraform.tfvars
 !terraform.tfvars.example
 apps/lambdas/dist/
+apps/api/dist-scripts/

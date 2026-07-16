@@ -22,6 +22,11 @@ COPY apps/api apps/api
 RUN npm run build --workspace @fueled-capital/shared
 RUN npm run prisma:generate --workspace apps/api
 RUN npm run build --workspace apps/api
+# Pre-compiled to plain JS rather than run via `ts-node` at runtime — running
+# a .ts file directly through the ts-node CLI inside this image failed with
+# "Unknown file extension .ts" (Node 20 in this environment wasn't picking up
+# ts-node's loader hook). Compiling ahead of time sidesteps that entirely.
+RUN npm run build:seed --workspace apps/api
 
 FROM base AS runtime
 ENV NODE_ENV=production
@@ -33,6 +38,7 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 COPY --from=build /app/packages/shared/package.json ./packages/shared/package.json
 COPY --from=build /app/apps/api/dist ./apps/api/dist
+COPY --from=build /app/apps/api/dist-scripts ./apps/api/dist-scripts
 COPY --from=build /app/apps/api/prisma ./apps/api/prisma
 COPY --from=build /app/apps/api/package.json ./apps/api/package.json
 COPY apps/api/docker-entrypoint.sh ./docker-entrypoint.sh
