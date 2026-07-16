@@ -25,4 +25,8 @@ module "app" {
   api_memory              = 1024
   web_cpu                  = 512
   web_memory               = 1024
+
+  # Real Cognito login isn't built into apps/web yet — keep the API's
+  # dev-mode x-dev-user-id sign-in bypass active in dev until it is.
+  cognito_auth_enabled = false
 }

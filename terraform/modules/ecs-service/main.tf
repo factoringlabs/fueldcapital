@@ -161,6 +161,15 @@ resource "aws_ecs_service" "this" {
   tags = var.tags
 
   depends_on = [aws_lb_listener.https]
+
+  # The task_definition resource above freezes its container_definitions at
+  # whatever `terraform apply` last created (see its own ignore_changes) since
+  # the deploy workflow registers new revisions directly. Without this, this
+  # service resource would still try to swing back to that frozen (stale)
+  # revision on every unrelated `terraform apply`, undoing every real deploy.
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
 }
 
 resource "aws_appautoscaling_target" "this" {

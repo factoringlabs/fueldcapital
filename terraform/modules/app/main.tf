@@ -137,8 +137,8 @@ module "api_service" {
   environment_variables = {
     PORT                      = "4000"
     AWS_REGION                = var.aws_region
-    COGNITO_USER_POOL_ID      = module.cognito.user_pool_id
-    COGNITO_CLIENT_ID          = module.cognito.client_id
+    COGNITO_USER_POOL_ID      = var.cognito_auth_enabled ? module.cognito.user_pool_id : ""
+    COGNITO_CLIENT_ID          = var.cognito_auth_enabled ? module.cognito.client_id : ""
     STORAGE_PROVIDER           = "s3"
     S3_INVOICE_DOCS_BUCKET     = module.invoice_docs_bucket.bucket_name
     S3_KYB_DOCS_BUCKET         = module.kyb_docs_bucket.bucket_name

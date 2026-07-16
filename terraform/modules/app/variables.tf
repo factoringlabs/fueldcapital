@@ -97,3 +97,13 @@ variable "web_memory" {
   type    = number
   default = 1024
 }
+
+# The web app doesn't have a real Cognito Hosted UI login flow yet (it only
+# knows how to do the dev-mode x-dev-user-id sign-in). Passing a real Cognito
+# pool id into the API disables that dev bypass (see CognitoAuthGuard), so
+# environments still relying on the dev sign-in page must set this to false
+# until Cognito login is actually built into apps/web.
+variable "cognito_auth_enabled" {
+  type    = bool
+  default = true
+}
