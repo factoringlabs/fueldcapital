@@ -21,6 +21,12 @@ variable "internal_api_key_secret_arn" {
   description = "Secrets Manager ARN of the INTERNAL_API_KEY shared secret, readable by ECS tasks and Lambdas."
 }
 
+variable "anthropic_api_key_secret_arn" {
+  type        = string
+  default     = ""
+  description = "Secrets Manager ARN of the ANTHROPIC_API_KEY secret, readable by the ECS task execution role. Empty when Claude-based extraction isn't configured for this environment."
+}
+
 variable "ecr_repository_arns" {
   type        = list(string)
   description = "ECR repo ARNs the GitHub Actions deploy role may push images to."

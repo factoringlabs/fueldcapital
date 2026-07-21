@@ -150,6 +150,20 @@ export class InvoicesService {
     });
   }
 
+  /**
+   * Runs extraction on a document the Broker just uploaded, before any invoice
+   * exists yet — lets the "upload invoice" form pre-fill from the document
+   * instead of starting blank. Read-only: no DB writes. The formal extraction
+   * record (used to drive PENDING_BROKER_REVIEW) is still created afterward by
+   * runExtractionCore once the invoice + document actually exist.
+   */
+  async previewExtraction(s3Key: string, user: AuthenticatedUser) {
+    if (user.role !== UserRole.BROKER) {
+      throw new ForbiddenException('Only Brokers can preview invoice extraction');
+    }
+    return this.ocrProvider.extract(s3Key);
+  }
+
   /** Attach a supporting document (invoice image, PoD, delivery ticket) after it has been uploaded to storage. */
   async attachDocument(
     invoiceId: string,

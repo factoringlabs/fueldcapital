@@ -2,18 +2,10 @@ import { apiFetch } from '@/lib/api';
 import { InvoiceDto, formatMoney } from '@/lib/types';
 import { StatusBadge } from '@/components/status-badge';
 import { PRE_FUNDING_INVOICE_STATUSES } from '@fueled-capital/shared';
-import {
-  attachDocument,
-  runExtraction,
-  submitForApproval,
-  respondToInfoRequest,
-  cancelInvoice,
-} from '../../actions';
+import { submitForApproval, respondToInfoRequest, cancelInvoice } from '../../actions';
 
 export default async function BrokerInvoiceDetailPage({ params }: { params: { id: string } }) {
   const invoice = await apiFetch<InvoiceDto>(`/invoices/${params.id}`);
-  const boundAttach = attachDocument.bind(null, invoice.id);
-  const boundExtract = runExtraction.bind(null, invoice.id);
   const boundSubmit = submitForApproval.bind(null, invoice.id);
   const boundRespond = respondToInfoRequest.bind(null, invoice.id);
   const boundCancel = cancelInvoice.bind(null, invoice.id);
@@ -39,37 +31,12 @@ export default async function BrokerInvoiceDetailPage({ params }: { params: { id
         {invoice.reserveAmount && <Field label="Reserve held" value={formatMoney(invoice.reserveAmount)} />}
       </dl>
 
-      {invoice.status === 'UPLOADED' && (
-        <section className="rounded-lg border border-gray-200 bg-white p-4">
-          <h3 className="text-sm font-semibold">Attach supporting document</h3>
-          <form action={boundAttach} className="mt-3 flex items-center gap-3">
-            <select name="docType" className="rounded border border-gray-300 px-2 py-1 text-sm">
-              <option value="INVOICE">Invoice</option>
-              <option value="POD">Proof of delivery</option>
-              <option value="DELIVERY_TICKET">Delivery ticket</option>
-              <option value="OTHER">Other</option>
-            </select>
-            <input type="file" name="file" required className="text-sm" />
-            <button type="submit" className="rounded bg-gray-900 px-3 py-1.5 text-sm text-white hover:bg-gray-700">
-              Upload
-            </button>
-          </form>
-          {invoice.documents && invoice.documents.length > 0 && (
-            <form action={boundExtract} className="mt-4">
-              <button type="submit" className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500">
-                Submit for extraction
-              </button>
-            </form>
-          )}
-        </section>
-      )}
-
       {invoice.status === 'PENDING_BROKER_REVIEW' && (
         <section className="rounded-lg border border-gray-200 bg-white p-4">
           <h3 className="text-sm font-semibold">Confirm extracted data</h3>
           <p className="mt-1 text-sm text-gray-500">
-            Extraction is stubbed in this build — review the fields above (entered manually at upload) and confirm
-            before sending to the Machinery Company for approval.
+            Review the fields above — they were pre-filled from the uploaded document — and confirm they&apos;re
+            correct before sending to the Machinery Company for approval.
           </p>
           <form action={boundSubmit} className="mt-3">
             <button type="submit" className="rounded bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-500">

@@ -5,6 +5,7 @@ import { AuthenticatedUser } from '../auth/authenticated-user.interface';
 import { Roles } from '../auth/roles.decorator';
 import { InvoicesService } from './invoices.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { ExtractPreviewDto } from './dto/extract-preview.dto';
 import { UnderwriteInvoiceDto } from './dto/underwrite-invoice.dto';
 import { DisputeInvoiceDto, ResolveDisputeDto } from './dto/dispute-invoice.dto';
 import { PlaceReserveHoldDto } from './dto/reserve-hold.dto';
@@ -28,6 +29,12 @@ export class InvoicesController {
   @Roles(UserRole.BROKER)
   create(@Body() dto: CreateInvoiceDto, @CurrentUser() user: AuthenticatedUser) {
     return this.invoices.create(dto, user);
+  }
+
+  @Post('extract-preview')
+  @Roles(UserRole.BROKER)
+  extractPreview(@Body() dto: ExtractPreviewDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.invoices.previewExtraction(dto.s3Key, user);
   }
 
   @Post(':id/documents')

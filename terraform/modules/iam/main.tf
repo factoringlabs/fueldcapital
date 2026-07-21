@@ -32,7 +32,7 @@ data "aws_iam_policy_document" "ecs_task_execution_secrets" {
   statement {
     sid       = "ReadTaskSecrets"
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = [var.db_secret_arn, var.internal_api_key_secret_arn]
+    resources = compact([var.db_secret_arn, var.internal_api_key_secret_arn, var.anthropic_api_key_secret_arn])
   }
 }
 

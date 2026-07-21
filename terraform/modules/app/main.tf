@@ -83,6 +83,22 @@ resource "aws_secretsmanager_secret_version" "internal_api_key" {
   secret_string = random_password.internal_api_key.result
 }
 
+# Unlike internal_api_key above, this can't be generated — it's a real
+# Anthropic API key supplied via var.anthropic_api_key. Only created when a
+# key is actually provided, so environments that haven't opted into Claude
+# extraction yet don't get an empty secret.
+resource "aws_secretsmanager_secret" "anthropic_api_key" {
+  count = var.anthropic_api_key != "" ? 1 : 0
+  name  = "${var.project_name}-${var.environment}-anthropic-api-key"
+  tags  = local.tags
+}
+
+resource "aws_secretsmanager_secret_version" "anthropic_api_key" {
+  count         = var.anthropic_api_key != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.anthropic_api_key[0].id
+  secret_string = var.anthropic_api_key
+}
+
 resource "aws_ecs_cluster" "this" {
   name = "${var.project_name}-${var.environment}"
   tags = local.tags
@@ -101,6 +117,7 @@ module "iam" {
   s3_bucket_arns              = [module.invoice_docs_bucket.bucket_arn, module.kyb_docs_bucket.bucket_arn]
   db_secret_arn               = module.database.master_user_secret_arn
   internal_api_key_secret_arn = aws_secretsmanager_secret.internal_api_key.arn
+  anthropic_api_key_secret_arn = var.anthropic_api_key != "" ? aws_secretsmanager_secret.anthropic_api_key[0].arn : ""
   ecs_cluster_arn             = aws_ecs_cluster.this.arn
   ecr_repository_arns         = [module.api_service.ecr_repository_arn, module.web_service.ecr_repository_arn]
   lambda_function_arns = [
@@ -142,7 +159,7 @@ module "api_service" {
     STORAGE_PROVIDER           = "s3"
     S3_INVOICE_DOCS_BUCKET     = module.invoice_docs_bucket.bucket_name
     S3_KYB_DOCS_BUCKET         = module.kyb_docs_bucket.bucket_name
-    OCR_PROVIDER                = "stub"
+    OCR_PROVIDER                = var.anthropic_api_key != "" ? "claude" : "stub"
     DEFAULT_ADVANCE_PCT         = "95"
     FUNDING_SLA_BUSINESS_DAYS   = "2"
     # Non-secret DB connection parts; DB_PASSWORD (below) is the only secret
@@ -154,11 +171,14 @@ module "api_service" {
     DB_NAME     = module.database.db_name
     DB_USERNAME = module.database.master_username
   }
-  secrets = {
-    # ECS extracts just the "password" key from the RDS-managed JSON secret.
-    DB_PASSWORD      = "${module.database.master_user_secret_arn}:password::"
-    INTERNAL_API_KEY = aws_secretsmanager_secret.internal_api_key.arn
-  }
+  secrets = merge(
+    {
+      # ECS extracts just the "password" key from the RDS-managed JSON secret.
+      DB_PASSWORD      = "${module.database.master_user_secret_arn}:password::"
+      INTERNAL_API_KEY = aws_secretsmanager_secret.internal_api_key.arn
+    },
+    var.anthropic_api_key != "" ? { ANTHROPIC_API_KEY = aws_secretsmanager_secret.anthropic_api_key[0].arn } : {},
+  )
   tags = local.tags
 }
 

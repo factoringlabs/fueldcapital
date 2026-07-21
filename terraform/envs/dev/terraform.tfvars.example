@@ -8,3 +8,8 @@ acm_certificate_arn_cloudfront = "arn:aws:acm:us-east-1:567947663867:certificate
 # Leave api_container_image / web_container_image unset for the very first
 # apply — they default to a placeholder image so Terraform doesn't need a
 # pre-built image to exist yet. The deploy workflow's first run replaces them.
+
+# Optional — enables Claude-based invoice extraction (reads uploaded invoices
+# and pre-fills fields for the Broker to confirm). Get a key at
+# console.anthropic.com. Leave unset to fall back to the no-op stub provider.
+# anthropic_api_key = "sk-ant-..."

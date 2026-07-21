@@ -54,3 +54,10 @@ variable "web_container_image" {
   default     = "public.ecr.aws/nginx/nginx:latest"
   description = "ECR image URI:tag for the web service. Same placeholder pattern as api_container_image."
 }
+
+variable "anthropic_api_key" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Anthropic API key for Claude-based invoice extraction. Get one at console.anthropic.com. Leave blank to fall back to the no-op stub extraction provider."
+}

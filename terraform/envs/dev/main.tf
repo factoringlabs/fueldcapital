@@ -29,4 +29,6 @@ module "app" {
   # Real Cognito login isn't built into apps/web yet — keep the API's
   # dev-mode x-dev-user-id sign-in bypass active in dev until it is.
   cognito_auth_enabled = false
+
+  anthropic_api_key = var.anthropic_api_key
 }

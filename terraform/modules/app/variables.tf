@@ -107,3 +107,13 @@ variable "cognito_auth_enabled" {
   type    = bool
   default = true
 }
+
+# When set, the API uses Claude to read uploaded invoices and pre-fill fields
+# for the Broker to confirm (see apps/api/src/extraction/claude-ocr.provider.ts).
+# Left blank, the API falls back to the no-op stub provider. Never checked in —
+# set via a local terraform.tfvars (gitignored) or CI secret.
+variable "anthropic_api_key" {
+  type      = string
+  default   = ""
+  sensitive = true
+}
