@@ -54,6 +54,22 @@ export interface MachineryCompanyDto {
   onboardingStatus: string;
 }
 
+export interface LedgerEntryDto {
+  id: string;
+  entryType: string;
+  amount: string;
+  currency: string;
+  createdAt: string;
+  invoiceNumber: string | null;
+  brokerName: string | null;
+  machineryCompanyName: string | null;
+}
+
+export interface LedgerResponse {
+  entries: LedgerEntryDto[];
+  totalsByType: Record<string, string>;
+}
+
 export interface CreditLimitDto {
   totalLimit: string;
   currentUsed: string;

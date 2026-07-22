@@ -52,4 +52,77 @@ export class LedgerService {
       },
     });
   }
+
+  /**
+   * Read side for the ledger viewer (Admin's full ledger, and the Broker /
+   * Machinery Company "statement of account" screens). Entry amounts are
+   * always stored positive — direction/meaning comes from entryType, not
+   * sign — so this returns totals grouped by entryType rather than inventing
+   * a net cash-position figure the underlying settlement rules don't yet
+   * define (see the open settlement-waterfall question from the design doc).
+   */
+  async find(filters: {
+    brokerId?: string;
+    machineryCompanyId?: string;
+    invoiceId?: string;
+    entryType?: LedgerEntryType;
+    from?: Date;
+    to?: Date;
+    take?: number;
+  }) {
+    const where: Prisma.LedgerEntryWhereInput = {
+      relatedBrokerId: filters.brokerId,
+      relatedMachineryCompanyId: filters.machineryCompanyId,
+      relatedInvoiceId: filters.invoiceId,
+      entryType: filters.entryType,
+      createdAt: filters.from || filters.to ? { gte: filters.from, lte: filters.to } : undefined,
+    };
+
+    const entries = await this.prisma.ledgerEntry.findMany({
+      where,
+      include: { relatedInvoice: { select: { invoiceNumber: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(filters.take ?? 100, 500),
+    });
+
+    const brokerIds = [...new Set(entries.map((e) => e.relatedBrokerId).filter((id): id is string => !!id))];
+    const mcIds = [
+      ...new Set(entries.map((e) => e.relatedMachineryCompanyId).filter((id): id is string => !!id)),
+    ];
+    const [brokers, machineryCompanies] = await Promise.all([
+      brokerIds.length
+        ? this.prisma.broker.findMany({ where: { id: { in: brokerIds } }, select: { id: true, legalName: true } })
+        : [],
+      mcIds.length
+        ? this.prisma.machineryCompany.findMany({
+            where: { id: { in: mcIds } },
+            select: { id: true, legalName: true },
+          })
+        : [],
+    ]);
+    const brokerNames = new Map(brokers.map((b) => [b.id, b.legalName]));
+    const machineryCompanyNames = new Map(machineryCompanies.map((m) => [m.id, m.legalName]));
+
+    const totalsByType: Partial<Record<LedgerEntryType, string>> = {};
+    for (const e of entries) {
+      const running = new Prisma.Decimal(totalsByType[e.entryType] ?? 0);
+      totalsByType[e.entryType] = running.add(e.amount).toString();
+    }
+
+    return {
+      entries: entries.map((e) => ({
+        id: e.id,
+        entryType: e.entryType,
+        amount: e.amount.toString(),
+        currency: e.currency,
+        createdAt: e.createdAt,
+        invoiceNumber: e.relatedInvoice?.invoiceNumber ?? null,
+        brokerName: e.relatedBrokerId ? (brokerNames.get(e.relatedBrokerId) ?? null) : null,
+        machineryCompanyName: e.relatedMachineryCompanyId
+          ? (machineryCompanyNames.get(e.relatedMachineryCompanyId) ?? null)
+          : null,
+      })),
+      totalsByType,
+    };
+  }
 }

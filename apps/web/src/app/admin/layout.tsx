@@ -9,6 +9,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         { href: '/admin/underwriting', label: 'Underwriting Queue' },
         { href: '/admin/invoices', label: 'Invoices' },
         { href: '/admin/payments', label: 'Payments' },
+        { href: '/admin/ledger', label: 'Ledger' },
         { href: '/admin/fee-tiers', label: 'Fee Tiers' },
         { href: '/admin/accounts', label: 'Accounts' },
         { href: '/admin/audit-log', label: 'Audit Log' },

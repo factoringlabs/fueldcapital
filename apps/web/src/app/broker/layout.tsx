@@ -9,6 +9,7 @@ export default function BrokerLayout({ children }: { children: React.ReactNode }
         { href: '/broker/invoices', label: 'Invoices' },
         { href: '/broker/invoices/new', label: 'Upload Invoice' },
         { href: '/broker/fee-invoices', label: 'Fee Invoices' },
+        { href: '/broker/statement', label: 'Statement of Account' },
         { href: '/broker/onboarding', label: 'KYB Onboarding' },
       ]}
     >

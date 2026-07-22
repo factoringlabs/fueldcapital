@@ -8,6 +8,7 @@ export default function MachineryCompanyLayout({ children }: { children: React.R
         { href: '/machinery-company', label: 'Dashboard' },
         { href: '/machinery-company/invoices', label: 'Invoice Approvals' },
         { href: '/machinery-company/payments', label: 'Payment History' },
+        { href: '/machinery-company/statement', label: 'Statement of Account' },
         { href: '/machinery-company/onboarding', label: 'KYC Onboarding' },
       ]}
     >
