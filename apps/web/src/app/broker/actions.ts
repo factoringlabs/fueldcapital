@@ -23,7 +23,10 @@ export async function uploadAndPreview(formData: FormData) {
     `/documents/presigned-upload-url?keyPrefix=staging&fileName=${encodeURIComponent(file.name)}`,
     { method: 'POST' },
   );
-  await fetch(upload.uploadUrl, { method: 'POST', body: await file.arrayBuffer() });
+  const putRes = await fetch(upload.uploadUrl, { method: 'PUT', body: await file.arrayBuffer() });
+  if (!putRes.ok) {
+    throw new Error(`Upload to storage failed (${putRes.status}).`);
+  }
 
   const preview = await apiFetch<{
     extractedFields: Record<string, string | number | undefined>;

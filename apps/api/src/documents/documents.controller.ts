@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -53,7 +54,7 @@ export class DocumentsController {
   // --- Local dev only: emulates the presigned S3 PUT/GET the browser would otherwise hit directly. ---
 
   @Public()
-  @Post('local-upload/:s3Key')
+  @Put('local-upload/:s3Key')
   async localUpload(@Param('s3Key') s3Key: string, @Req() req: Request, @Res() res: Response) {
     const filePath = safeLocalPath(decodeURIComponent(s3Key));
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
