@@ -207,9 +207,17 @@ export class InvoicesService {
     const primaryDoc = await this.prisma.invoiceDocument.findFirst({ where: { invoiceId } });
     if (!primaryDoc) throw new BadRequestException('Attach at least one document before extraction');
 
-    return this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       await this.writeStatusChange(tx, invoiceId, InvoiceStatus.UPLOADED, InvoiceStatus.EXTRACTING, actorUserId);
-      const result = await this.ocrProvider.extract(primaryDoc.s3Key);
+    });
+
+    // Runs outside the transaction — a real OCR provider is a slow, external
+    // network call (Claude can take several seconds), which would otherwise
+    // sit inside a DB transaction well past Prisma's default 5s interactive
+    // transaction timeout and fail the write below with "transaction closed".
+    const result = await this.ocrProvider.extract(primaryDoc.s3Key);
+
+    return this.prisma.$transaction(async (tx) => {
       await tx.invoiceExtractionResult.create({
         data: {
           invoiceId,
