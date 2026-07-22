@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { apiFetch } from '@/lib/api';
+import { ApiError, apiFetch } from '@/lib/api';
 import { InvoiceDto } from '@/lib/types';
 
 /**
@@ -48,31 +48,43 @@ export async function uploadAndPreview(formData: FormData) {
  * extraction — landing the invoice on PENDING_BROKER_REVIEW automatically, the
  * same state the old manual-attach flow reached, just reordered.
  */
-export async function createInvoice(formData: FormData) {
-  const invoice = await apiFetch<InvoiceDto>('/invoices', {
-    method: 'POST',
-    body: JSON.stringify({
-      invoiceNumber: formData.get('invoiceNumber'),
-      machineryCompanyId: formData.get('machineryCompanyId'),
-      invoiceDate: formData.get('invoiceDate'),
-      dueDate: formData.get('dueDate'),
-      billedAmount: Number(formData.get('billedAmount')),
-      taxAmount: Number(formData.get('taxAmount') || 0),
-      gallons: Number(formData.get('gallons')),
-      paymentReference: formData.get('paymentReference') || undefined,
-    }),
-  });
-
-  const stagingS3Key = formData.get('stagingS3Key');
-  if (stagingS3Key) {
-    await apiFetch(`/invoices/${invoice.id}/documents`, {
+/**
+ * Returns a result object rather than throwing — Next.js redacts thrown
+ * Server Action error messages in production the same way it redacts render
+ * errors, so an expected/user-facing failure (e.g. duplicate invoice number)
+ * must come back as data, not an exception, for the client to display it.
+ */
+export async function createInvoice(
+  formData: FormData,
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    const invoice = await apiFetch<InvoiceDto>('/invoices', {
       method: 'POST',
-      body: JSON.stringify({ docType: formData.get('docType') || 'INVOICE', s3Key: stagingS3Key }),
+      body: JSON.stringify({
+        invoiceNumber: formData.get('invoiceNumber'),
+        machineryCompanyId: formData.get('machineryCompanyId'),
+        invoiceDate: formData.get('invoiceDate'),
+        dueDate: formData.get('dueDate'),
+        billedAmount: Number(formData.get('billedAmount')),
+        taxAmount: Number(formData.get('taxAmount') || 0),
+        gallons: Number(formData.get('gallons')),
+        paymentReference: formData.get('paymentReference') || undefined,
+      }),
     });
-    await apiFetch(`/invoices/${invoice.id}/extract`, { method: 'POST' });
-  }
 
-  return { id: invoice.id };
+    const stagingS3Key = formData.get('stagingS3Key');
+    if (stagingS3Key) {
+      await apiFetch(`/invoices/${invoice.id}/documents`, {
+        method: 'POST',
+        body: JSON.stringify({ docType: formData.get('docType') || 'INVOICE', s3Key: stagingS3Key }),
+      });
+      await apiFetch(`/invoices/${invoice.id}/extract`, { method: 'POST' });
+    }
+
+    return { ok: true, id: invoice.id };
+  } catch (err) {
+    return { ok: false, error: err instanceof ApiError ? err.message : 'Something went wrong creating the invoice.' };
+  }
 }
 
 export async function runExtraction(invoiceId: string) {

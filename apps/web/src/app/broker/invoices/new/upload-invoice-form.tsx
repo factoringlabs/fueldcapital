@@ -58,11 +58,11 @@ export function UploadInvoiceForm({ machineryCompanies }: { machineryCompanies: 
     setConfirmError(null);
     const formData = new FormData(e.currentTarget);
     startConfirming(async () => {
-      try {
-        const { id } = await createInvoice(formData);
-        router.push(`/broker/invoices/${id}`);
-      } catch (err) {
-        setConfirmError(err instanceof Error ? err.message : 'Something went wrong creating the invoice.');
+      const result = await createInvoice(formData);
+      if (result.ok) {
+        router.push(`/broker/invoices/${result.id}`);
+      } else {
+        setConfirmError(result.error);
       }
     });
   }
