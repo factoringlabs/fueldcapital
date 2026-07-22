@@ -19,11 +19,15 @@ export async function uploadAndPreview(formData: FormData) {
   }
   const docType = (formData.get('docType') as string) || 'INVOICE';
 
-  const upload = await apiFetch<{ s3Key: string; uploadUrl: string }>(
+  const upload = await apiFetch<{ s3Key: string; uploadUrl: string; headers: Record<string, string> }>(
     `/documents/presigned-upload-url?keyPrefix=staging&fileName=${encodeURIComponent(file.name)}`,
     { method: 'POST' },
   );
-  const putRes = await fetch(upload.uploadUrl, { method: 'PUT', body: await file.arrayBuffer() });
+  const putRes = await fetch(upload.uploadUrl, {
+    method: 'PUT',
+    headers: upload.headers,
+    body: await file.arrayBuffer(),
+  });
   if (!putRes.ok) {
     throw new Error(`Upload to storage failed (${putRes.status}).`);
   }

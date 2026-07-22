@@ -4,6 +4,8 @@ export interface PresignedUpload {
   s3Key: string;
   uploadUrl: string;
   expiresInSeconds: number;
+  /** Headers the caller must send on the PUT — e.g. S3 signs x-amz-server-side-encryption, so it must be sent identically or the signature is rejected. */
+  headers: Record<string, string>;
 }
 
 /**

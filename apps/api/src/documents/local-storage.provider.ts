@@ -21,6 +21,7 @@ export class LocalStorageProvider implements StorageProvider {
       s3Key,
       uploadUrl: `http://localhost:${port}/documents/local-upload/${encodeURIComponent(s3Key)}`,
       expiresInSeconds: UPLOAD_EXPIRY_SECONDS,
+      headers: {},
     };
   }
 

@@ -26,7 +26,13 @@ export class S3StorageProvider implements StorageProvider {
       ServerSideEncryption: 'AES256',
     });
     const uploadUrl = await getSignedUrl(this.client, command, { expiresIn: UPLOAD_EXPIRY_SECONDS });
-    return { s3Key, uploadUrl, expiresInSeconds: UPLOAD_EXPIRY_SECONDS };
+    return {
+      s3Key,
+      uploadUrl,
+      expiresInSeconds: UPLOAD_EXPIRY_SECONDS,
+      // Must match the ServerSideEncryption set above — it's part of the signed request.
+      headers: { 'x-amz-server-side-encryption': 'AES256' },
+    };
   }
 
   async getDownloadUrl(s3Key: string): Promise<string> {
