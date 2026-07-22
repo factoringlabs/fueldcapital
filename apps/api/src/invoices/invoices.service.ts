@@ -123,6 +123,12 @@ export class InvoicesService {
     if (mc.onboardingStatus !== 'APPROVED') {
       throw new ForbiddenException('Machinery Company is not onboarded/approved yet');
     }
+    const existing = await this.prisma.invoice.findUnique({
+      where: { brokerId_invoiceNumber: { brokerId: user.brokerId, invoiceNumber: dto.invoiceNumber } },
+    });
+    if (existing) {
+      throw new BadRequestException(`You've already uploaded an invoice numbered ${dto.invoiceNumber}`);
+    }
 
     const totalAmount = dto.billedAmount + (dto.taxAmount ?? 0);
 

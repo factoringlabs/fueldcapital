@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { MachineryCompanyDto } from '@/lib/types';
 import { createInvoice, uploadAndPreview } from '../../actions';
 
@@ -22,10 +23,13 @@ type PreviewResult = {
 };
 
 export function UploadInvoiceForm({ machineryCompanies }: { machineryCompanies: MachineryCompanyDto[] }) {
+  const router = useRouter();
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [machineryCompanyId, setMachineryCompanyId] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isConfirming, startConfirming] = useTransition();
 
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -45,6 +49,20 @@ export function UploadInvoiceForm({ machineryCompanies }: { machineryCompanies: 
           confidenceScores: {},
         });
         setMachineryCompanyId(formData.get('machineryCompanyId') as string);
+      }
+    });
+  }
+
+  async function handleConfirm(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setConfirmError(null);
+    const formData = new FormData(e.currentTarget);
+    startConfirming(async () => {
+      try {
+        const { id } = await createInvoice(formData);
+        router.push(`/broker/invoices/${id}`);
+      } catch (err) {
+        setConfirmError(err instanceof Error ? err.message : 'Something went wrong creating the invoice.');
       }
     });
   }
@@ -95,13 +113,16 @@ export function UploadInvoiceForm({ machineryCompanies }: { machineryCompanies: 
   const lowConfidence = (key: keyof ExtractedFields) => confidence[key] !== undefined && confidence[key]! < 0.6;
 
   return (
-    <form action={createInvoice} className="mt-6 grid grid-cols-2 gap-4">
+    <form onSubmit={handleConfirm} className="mt-6 grid grid-cols-2 gap-4">
       <input type="hidden" name="machineryCompanyId" value={machineryCompanyId} />
       <input type="hidden" name="stagingS3Key" value={preview.stagingS3Key} />
       <input type="hidden" name="docType" value={preview.docType} />
 
-      {error && <p className="col-span-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{error}</p>}
-      {!error && (
+      {confirmError && <p className="col-span-2 rounded bg-red-50 px-3 py-2 text-sm text-red-800">{confirmError}</p>}
+      {error && !confirmError && (
+        <p className="col-span-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800">{error}</p>
+      )}
+      {!error && !confirmError && (
         <p className="col-span-2 text-sm text-gray-500">
           Fields below are read from the document — double-check them, especially anything highlighted, then confirm.
         </p>
@@ -130,8 +151,12 @@ export function UploadInvoiceForm({ machineryCompanies }: { machineryCompanies: 
       <Field label="Gallons" name="gallons" type="number" step="0.001" defaultValue={fields.gallons} flagged={lowConfidence('gallons')} required />
       <Field label="Payment reference" name="paymentReference" defaultValue={fields.paymentReference} flagged={lowConfidence('paymentReference')} />
 
-      <button type="submit" className="col-span-2 rounded bg-gray-900 py-2 text-white hover:bg-gray-700">
-        Confirm and create invoice
+      <button
+        type="submit"
+        disabled={isConfirming}
+        className="col-span-2 rounded bg-gray-900 py-2 text-white hover:bg-gray-700 disabled:opacity-50"
+      >
+        {isConfirming ? 'Creating invoice…' : 'Confirm and create invoice'}
       </button>
     </form>
   );

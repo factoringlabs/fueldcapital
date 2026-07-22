@@ -1,7 +1,6 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { InvoiceDto } from '@/lib/types';
 
@@ -73,7 +72,7 @@ export async function createInvoice(formData: FormData) {
     await apiFetch(`/invoices/${invoice.id}/extract`, { method: 'POST' });
   }
 
-  redirect(`/broker/invoices/${invoice.id}`);
+  return { id: invoice.id };
 }
 
 export async function runExtraction(invoiceId: string) {
